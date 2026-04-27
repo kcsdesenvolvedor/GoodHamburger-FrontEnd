@@ -1,0 +1,157 @@
+﻿@page "/menu"
+@using GoodHamburger.Web.Models
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+<h1>Cardápio</h1>
+
+<div class="menu-container">
+
+    <!-- CARDÁPIO -->
+    <div class="menu-list">
+        @foreach (var item in MenuItems)
+        {
+            <div class="menu-item">
+                <div>
+                    <strong>@item.Name</strong>
+                    <div>@item.Price.ToString("C")</div>
+                </div>
+
+                <button class="add-btn"
+                        disabled="@IsItemSelected(item)"
+                        @onclick="() => AddItem(item)">
+                    +
+                </button>
+            </div>
+        }
+    </div>
+
+    <!-- PEDIDO ATUAL -->
+    <div class="order-summary">
+        <h3>Pedido Atual</h3>
+        <div class="client-input">
+            <input placeholder="Nome do cliente"
+                   @bind="ClientName"
+                   @bind:event="oninput" />
+        </div>
+
+        @if (!SelectedItems.Any())
+        {
+            <p>Nenhum item selecionado</p>
+        }
+        else
+        {
+            @foreach (var item in SelectedItems)
+            {
+                <div class="order-item">
+                    <span>@item.Name</span>
+                    <span>@item.Price.ToString("C")</span>
+                    <span>
+                        <button class="remove-btn"
+                                title="Remover item"
+                                @onclick="() => RemoveItem(item)">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </span>
+                </div>
+            }
+
+            <hr />
+
+            <div class="total">
+                Total: @SelectedItems.Sum(i => i.Price).ToString("C")
+            </div>
+        }
+
+        <button class="finalize-btn @(CanFinalize ? "" : "disabled-style")"
+                disabled="@(!CanFinalize)"
+                @onclick="FinalizeOrder">
+            Finalizar pedido
+        </button>
+        @if (!CanFinalize)
+        {
+            <span class="hint-text">
+                ⚠️ Adicione o nome do cliente e um hambúrguer para finalizar o pedido
+            </span>
+        }
+
+        @if (!string.IsNullOrEmpty(ErrorMessage))
+        {
+            <div class="error">@ErrorMessage</div>
+        }
+    </div>
+
+</div>
+
+@code {
+    private List<MenuItemDTO> MenuItems = new();
+    private List<MenuItemDTO> SelectedItems = new();
+    private string ErrorMessage = "";
+    private string ClientName = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        MenuItems = await Http.GetFromJsonAsync<List<MenuItemDTO>>("menu");
+    }
+
+    void AddItem(MenuItemDTO item)
+    {
+        if (IsItemSelected(item))
+            return;
+
+        SelectedItems.Add(item);
+    }
+
+    void RemoveItem(MenuItemDTO item)
+    {
+        if (!IsItemSelected(item))
+            return;
+
+        SelectedItems.Remove(item);
+    }
+
+    bool IsItemSelected(MenuItemDTO item)
+        => SelectedItems.Any(i => i.Type == item.Type);
+
+    bool CanFinalize =>
+    SelectedItems.Any(i => i.Type == "Burger") &&
+    !string.IsNullOrWhiteSpace(ClientName?.Trim());
+
+    async Task FinalizeOrder()
+    {
+        ErrorMessage = "";
+
+        var order = new CreateOrderDTO
+        {
+            ClientName = ClientName,
+            OrderItems = SelectedItems.Select(i => new OrderItemDTO
+            {
+                Type = ConvertType(i.Type),
+                Name = i.Name,
+                Price = i.Price
+            }).ToList()
+        };
+
+        var response = await Http.PostAsJsonAsync("orders", order);
+
+        if (response.IsSuccessStatusCode)
+        {
+            SelectedItems.Clear();
+            ClientName = "";
+            Nav.NavigateTo("/orders");
+        }
+        else
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            ErrorMessage = error;
+        }
+    }
+
+    int ConvertType(string type) => type switch
+    {
+        "Burger" => 1,
+        "Fries" => 2,
+        "Drink" => 3,
+        _ => throw new Exception("Tipo inválido")
+    };
+}

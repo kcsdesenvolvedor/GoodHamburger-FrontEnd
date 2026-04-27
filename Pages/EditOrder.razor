@@ -1,0 +1,174 @@
+﻿@page "/orders/edit/{Id:guid}"
+@using GoodHamburger.Web.Models
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<h1>Editar Pedido</h1>
+
+@if (Order == null)
+{
+    <p>Carregando...</p>
+}
+else
+{
+    <div class="menu-container">
+
+        <!-- CARDÁPIO -->
+        <div class="menu-list">
+            @foreach (var item in MenuItems)
+            {
+                <div class="menu-item">
+                    <div>
+                        <strong>@item.Name</strong>
+                        <div>@item.Price.ToString("C")</div>
+                    </div>
+
+                    <button class="add-btn"
+                            disabled="@IsItemSelected(item)"
+                            @onclick="() => AddItem(item)">
+                        +
+                    </button>
+                </div>
+            }
+        </div>
+
+        <!-- PEDIDO -->
+        <div class="order-summary">
+            <h3>Pedido</h3>
+
+            <div class="client-input">
+                <input placeholder="Nome do cliente"
+                       @bind="ClientName"
+                       @bind:event="oninput" />
+            </div>
+
+            @foreach (var item in SelectedItems)
+            {
+                <div class="order-item">
+                    <span>@item.Name</span>
+                    <span>@item.Price.ToString("C")</span>
+                    <span>
+                        <button class="remove-btn"
+                                title="Remover item"
+                                @onclick="() => RemoveItem(item)">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </span>
+                </div>
+            }
+
+            <hr />
+
+            <div class="total">
+                Total: @SelectedItems.Sum(i => i.Price).ToString("C")
+            </div>
+
+            <button disabled="@(!CanFinalize)" class="finalize-btn @(CanFinalize ? "" : "disabled-style")" @onclick="UpdateOrder">Salvar alterações</button>
+            <button class="delete-btn" @onclick="DeleteOrder">
+                🗑️ Excluir pedido
+            </button>
+            @if (!CanFinalize)
+            {
+                <span class="hint-text">
+                    ⚠️ Adicione o nome do cliente e um hambúrguer para finalizar o pedido
+                </span>
+            }
+        </div>
+
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private OrderDTO? Order;
+    private List<MenuItemDTO> MenuItems = new();
+    private List<MenuItemDTO> SelectedItems = new();
+    private string ClientName = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        MenuItems = await Http.GetFromJsonAsync<List<MenuItemDTO>>("menu");
+
+        Order = await Http.GetFromJsonAsync<OrderDTO>($"orders/{Id}");
+
+        if (Order != null)
+        {
+            ClientName = Order.ClientName;
+
+            SelectedItems = Order.Items
+                .Select(i => new MenuItemDTO
+                {
+                    Type = i.Type.ToString(),
+                    Name = i.Name,
+                    Price = i.Price
+                }).ToList();
+        }
+    }
+
+    void AddItem(MenuItemDTO item)
+    {
+        if (IsItemSelected(item))
+            return;
+
+        SelectedItems.Add(item);
+    }
+
+    void RemoveItem(MenuItemDTO item)
+    {
+        SelectedItems.Remove(item);
+    }
+
+    bool IsItemSelected(MenuItemDTO item)
+        => SelectedItems.Any(i => i.Type == item.Type);
+
+    bool CanFinalize =>
+    SelectedItems.Any(i => i.Type == "Burger") &&
+    !string.IsNullOrWhiteSpace(ClientName?.Trim());
+
+    async Task UpdateOrder()
+    {
+        var dto = new
+        {
+            orderId = Id,
+            clientName = ClientName,
+            items = SelectedItems.Select(i => new
+            {
+                type = ConvertType(i.Type),
+                name = i.Name,
+                price = i.Price
+            })
+        };
+
+        var response = await Http.PutAsJsonAsync("orders", dto);
+
+        if (response.IsSuccessStatusCode)
+        {
+            Nav.NavigateTo("/orders");
+        }
+    }
+
+    async Task DeleteOrder()
+    {
+        var confirm = await JS.InvokeAsync<bool>("confirm", "Tem certeza que deseja excluir este pedido?");
+
+        if (!confirm)
+            return;
+
+        var response = await Http.DeleteAsync($"orders/{Id}");
+
+        if (response.IsSuccessStatusCode)
+        {
+            Nav.NavigateTo("/orders");
+        }
+    }
+
+    int ConvertType(string type) => type switch
+    {
+        "Burger" => 1,
+        "Fries" => 2,
+        "Drink" => 3,
+        _ => throw new Exception("Tipo inválido")
+    };
+}

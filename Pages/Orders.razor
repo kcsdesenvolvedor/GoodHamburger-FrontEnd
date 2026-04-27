@@ -1,0 +1,39 @@
+﻿@page "/orders"
+@using GoodHamburger.Web.Models
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+<h1>Pedidos</h1>
+
+<div class="orders-container">
+    @foreach (var order in OrdersList)
+    {
+        <div class="order-card" @onclick="() => GoToEdit(order.Id)">
+            
+            <div class="order-id">
+                #@order.ClientName
+            </div>
+
+            <div class="order-info">
+                <div>Subtotal: @order.Subtotal.ToString("C")</div>
+                <div>Desconto: @order.DiscountAmount.ToString("C")</div>
+                <div class="total">Total: @order.Total.ToString("C")</div>
+            </div>
+
+        </div>
+    }
+</div>
+
+@code {
+    private List<OrderDTO> OrdersList = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        OrdersList = await Http.GetFromJsonAsync<List<OrderDTO>>("orders");
+    }
+
+    void GoToEdit(Guid id)
+    {
+        Nav.NavigateTo($"/orders/edit/{id}");
+    }
+}
